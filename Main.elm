@@ -4,7 +4,7 @@ import Html exposing (Html, div, text, button)
 import Html.Events exposing (..)
 import Html.Attributes exposing (..)
 import Time exposing (..)
-
+import Task exposing (..)
 
 main =
     Html.program
@@ -16,29 +16,11 @@ main =
 
 
 type alias Model =
-    { startTime : Int
-    , interval : Interval
+    { interval : Interval
     , running : Bool
-    , currentTime: Int
+    , timeElapsed : Time
+    , previousTick : Time
     }
-
-
-init : ( Model, Cmd Msg )
-init =
-    ( Model (25 * 60 * 60) Pomodoro False, Task.perform GetTime Time.now )
-
-
-pomodoroTime =
-    25 * 60
-
-
-shortTime =
-    5 * 60
-
-
-longTime =
-    10 * 60
-
 
 type Interval
     = Pomodoro
@@ -51,50 +33,73 @@ type Msg
     | Start
     | Stop
     | Tick Time
-    | SetStartTime Time
 
+
+intervalToTime : Interval -> Time
+intervalToTime intr =
+  case intr of
+    Pomodoro ->
+      pomodoroTime
+    Short ->
+      shortTime
+    Long ->
+      longTime
+
+pomodoroTime =
+    25 * minute
+
+shortTime =
+    5 * minute
+
+longTime =
+    10 * minute
+
+init : ( Model, Cmd Msg )
+init =
+    ( Model Pomodoro False 0 0, Cmd.none )
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg { startTime, interval, running, currentTime } =
+update msg { interval, running, timeElapsed, previousTick } =
     case msg of
-        SetStartTime time ->
-          ( Model time interval running currentTime, Cmd.none )
         SetInterval intr ->
-            case intr of
-                Pomodoro ->
-                    ( Model pomodoroTime Pomodoro False, Cmd.none )
-
-                Short ->
-                    ( Model shortTime Short False, Cmd.none )
-
-                Long ->
-                    ( Model longTime Long False, Cmd.none )
-
+          ( Model intr False 0 previousTick, Cmd.none)
         Start ->
-            ( Model timeRemaining interval True, Cmd.none )
-
+            ( Model interval True timeElapsed previousTick, Cmd.none )
         Stop ->
-            ( Model timeRemaining interval False, Cmd.none )
+            ( Model interval False timeElapsed previousTick, Cmd.none )
 
         Tick time ->
             case running of
                 True ->
-                    ( Model startTime interval running time, Cmd.none )
+                    ( Model interval running (updateTimeElapsed timeElapsed time previousTick interval) time, Cmd.none )
 
                 False ->
-                    ( Model startTime interval running time, Cmd.none )
+                    (Model interval running timeElapsed time, Cmd.none )
 
 
+updateTimeElapsed : Time -> Time -> Time -> Interval -> Time
+updateTimeElapsed timeElapsed time previousTick intr =
+  if previousTick == 0 || timeElapsed == (intervalToTime intr) then
+    timeElapsed
+  else
+    timeElapsed + (time - previousTick)
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every second Tick
+    Time.every millisecond Tick
+
+
+timeRemainingView : Time -> String
+timeRemainingView time =
+  toString (floor (inMinutes time)) ++ ":" ++ (String.padLeft 2 '0' (toString ( rem (floor (inSeconds time)) 60 )))
 
 
 view : Model -> Html Msg
-view model =
+view { timeElapsed, interval } =
     div []
-        [ div [] [ text (toString model.timeRemaining) ]
+        [ div [] [ timeRemainingView ((intervalToTime interval) - timeElapsed) |> text ]
         , button [ onClick Start ] [ text "Start" ]
         , button [ onClick Stop ] [ text "Stop"]
         , button [ onClick (SetInterval Short)] [ text "Short"]
+        , button [ onClick (SetInterval Long)] [ text "Long"]
+        , button [ onClick (SetInterval Pomodoro)] [ text "Pomodoro"]
         ]
