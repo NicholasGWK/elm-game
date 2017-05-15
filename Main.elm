@@ -19,7 +19,6 @@ type alias Model =
     { interval : Interval
     , running : Bool
     , timeElapsed : Time
-    , previousTick : Time
     }
 
 type Interval
@@ -56,36 +55,29 @@ longTime =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model Pomodoro False 0 0, Cmd.none )
+    ( Model Pomodoro False 0, Cmd.none )
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg { interval, running, timeElapsed, previousTick } =
+update msg { interval, running, timeElapsed } =
     case msg of
         SetInterval intr ->
-          ( Model intr False 0 previousTick, Cmd.none)
+          ( Model intr False 0, Cmd.none)
         Start ->
-            ( Model interval True timeElapsed previousTick, Cmd.none )
+            ( Model interval True timeElapsed, Cmd.none )
         Stop ->
-            ( Model interval False timeElapsed previousTick, Cmd.none )
+            ( Model interval False timeElapsed, Cmd.none )
 
         Tick time ->
             case running of
                 True ->
-                    ( Model interval running (updateTimeElapsed timeElapsed time previousTick interval) time, Cmd.none )
+                    ( Model interval running (timeElapsed + second), Cmd.none )
 
                 False ->
-                    (Model interval running timeElapsed time, Cmd.none )
+                    (Model interval running timeElapsed, Cmd.none )
 
-
-updateTimeElapsed : Time -> Time -> Time -> Interval -> Time
-updateTimeElapsed timeElapsed time previousTick intr =
-  if previousTick == 0 || timeElapsed == (intervalToTime intr) then
-    timeElapsed
-  else
-    timeElapsed + (time - previousTick)
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every millisecond Tick
+    Time.every second Tick
 
 
 timeRemainingView : Time -> String
