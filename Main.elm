@@ -1,10 +1,9 @@
 module Main exposing (..)
 
-import Html exposing (Html, div, text, button)
+import Html exposing (Html, div, text, button, ul, li)
 import Html.Events exposing (..)
 import Html.Attributes exposing (..)
-import Time exposing (..)
-import Task exposing (..)
+
 
 main =
     Html.program
@@ -15,91 +14,107 @@ main =
         }
 
 
-type alias Model =
-    { interval : Interval
-    , running : Bool
-    , timeElapsed : Time
+type Stage
+    = Backlog
+    | Queue
+    | Daily
+    | Completed
+
+
+type Movement
+    = Forward
+    | Backward
+
+
+type alias Note =
+    { id : Int
+    , content : String
+    , stage : Stage
     }
 
-type Interval
-    = Pomodoro
-    | Short
-    | Long
+
+type alias Model =
+    { notes : List Note
+    , id : Int
+    }
 
 
 type Msg
-    = SetInterval Interval
-    | Start
-    | Stop
-    | Tick Time
+    = Add Note
+    | Move Movement Int
 
-
-intervalToTime : Interval -> Time
-intervalToTime intr =
-  case intr of
-    Pomodoro ->
-      pomodoroTime
-    Short ->
-      shortTime
-    Long ->
-      longTime
-
-pomodoroTime =
-    25 * minute
-
-shortTime =
-    0.1 * minute
-
-longTime =
-    10 * minute
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model Pomodoro False 0, Cmd.none )
+    ( Model [] 0, Cmd.none )
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg { interval, running, timeElapsed } =
-    case msg of
-        SetInterval intr ->
-          ( Model intr False 0, Cmd.none)
-        Start ->
-            ( Model interval True timeElapsed, Cmd.none )
-        Stop ->
-            ( Model interval False timeElapsed, Cmd.none )
-
-        Tick time ->
-            case running of
-                True ->
-                    ( Model interval running (updateTimeElapsed timeElapsed interval), Cmd.none )
-
-                False ->
-                    (Model interval running timeElapsed, Cmd.none )
-
-
-updateTimeElapsed : Time -> Interval -> Time
-updateTimeElapsed timeElapsed interval =
-  if timeElapsed == (intervalToTime interval) then
-    timeElapsed
-  else
-    timeElapsed + second
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every second Tick
+    Sub.none
 
 
-timeRemainingView : Time -> String
-timeRemainingView time =
-  toString (floor (inMinutes time)) ++ ":" ++ (String.padLeft 2 '0' (toString ( rem (floor (inSeconds time)) 60 )))
+forward : Int -> Note -> Note
+forward noteId { id, stage, content } =
+    if id == noteId then
+        case stage of
+            Backlog ->
+                Note id content Queue
+
+            Queue ->
+                Note id content Daily
+
+            Daily ->
+                Note id content Completed
+
+            Completed ->
+                Note id content Completed
+    else
+        Note id content stage
+
+
+backward : Int -> Note -> Note
+backward noteId { id, content, stage } =
+    if id == noteId then
+        case stage of
+            Backlog ->
+                Note id content Backlog
+
+            Queue ->
+                Note id content Backlog
+
+            Daily ->
+                Note id content Queue
+
+            Completed ->
+                Note id content Daily
+    else
+        Note id content stage
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg { notes, id } =
+    case msg of
+        Add note ->
+            ( Model (note :: notes) (id + 1), Cmd.none )
+
+        Move movement noteId ->
+            case movement of
+                Forward ->
+                    ( Model (List.map (forward noteId) notes) id, Cmd.none )
+
+                Backward ->
+                    ( Model (List.map (backward noteId) notes) id, Cmd.none )
+
+
+stageView : String -> Stage -> List Note -> Html Msg
+stageView header stage notes =
+    div []
+        [ text header
+        , ul [] (List.filter (\note -> note.stage == stage) notes |> (List.map (\note -> li [] [ text note.context ])))
+        ]
 
 
 view : Model -> Html Msg
-view { timeElapsed, interval } =
-    div []
-        [ div [] [ timeRemainingView ((intervalToTime interval) - timeElapsed) |> text ]
-        , button [ onClick Start ] [ text "Start" ]
-        , button [ onClick Stop ] [ text "Stop"]
-        , button [ onClick (SetInterval Short)] [ text "Short"]
-        , button [ onClick (SetInterval Long)] [ text "Long"]
-        , button [ onClick (SetInterval Pomodoro)] [ text "Pomodoro"]
-        ]
+view model =
+    div [] [ stageView "Daily" Daily model.notes ]
