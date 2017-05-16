@@ -48,7 +48,7 @@ pomodoroTime =
     25 * minute
 
 shortTime =
-    5 * minute
+    0.1 * minute
 
 longTime =
     10 * minute
@@ -70,10 +70,18 @@ update msg { interval, running, timeElapsed } =
         Tick time ->
             case running of
                 True ->
-                    ( Model interval running (timeElapsed + second), Cmd.none )
+                    ( Model interval running (updateTimeElapsed timeElapsed interval), Cmd.none )
 
                 False ->
                     (Model interval running timeElapsed, Cmd.none )
+
+
+updateTimeElapsed : Time -> Interval -> Time
+updateTimeElapsed timeElapsed interval =
+  if timeElapsed == (intervalToTime interval) then
+    timeElapsed
+  else
+    timeElapsed + second
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
