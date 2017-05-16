@@ -3,6 +3,7 @@ module Main exposing (..)
 import Html exposing (Html, div, text, button, ul, li, input)
 import Html.Events exposing (..)
 import Html.Attributes exposing (..)
+import Table
 
 
 main =
@@ -10,7 +11,7 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = subscriptions
+        , subscriptions = \_ -> Sub.none
         }
 
 
@@ -37,6 +38,10 @@ type alias Model =
     { notes : List Note
     , id : Int
     , textField : String
+    , dailyTableState : Table.State
+    , completedTableState : Table.State
+    , queueTableState : Table.State
+    , backlogTableState : Table.State
     }
 
 
@@ -44,16 +49,28 @@ type Msg
     = Add
     | Move Movement Int
     | NoteContent String
+    | SetTableState Stage Table.State
+
+
+tableInit =
+    Table.initialSort "Title"
+
+
+initModel : Model
+initModel =
+    { notes = []
+    , id = 0
+    , textField = ""
+    , dailyTableState = tableInit
+    , completedTableState = tableInit
+    , queueTableState = tableInit
+    , backlogTableState = tableInit
+    }
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model [] 0 "", Cmd.none )
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
+    ( initModel, Cmd.none )
 
 
 forward : Int -> Note -> Note
@@ -95,25 +112,53 @@ backward noteId { id, content, stage } =
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg { notes, id, textField } =
+update msg model =
     case msg of
         Add ->
             let
                 note =
-                    Note (id + 1) textField Daily
+                    Note (model.id + 1) model.textField Daily
+
+                newNotes =
+                    note :: model.notes
+
+                newId =
+                    model.id + 1
             in
-                ( Model (note :: notes) (id + 1) textField, Cmd.none )
+                ( { model | notes = newNotes, id = newId }, Cmd.none )
 
         Move movement noteId ->
             case movement of
                 Forward ->
-                    ( Model (List.map (forward noteId) notes) id textField, Cmd.none )
+                    let
+                        movedNotes =
+                            List.map (forward noteId) model.notes
+                    in
+                        ( { model | notes = movedNotes }, Cmd.none )
 
                 Backward ->
-                    ( Model (List.map (backward noteId) notes) id textField, Cmd.none )
+                    let
+                        movedNotes =
+                            List.map (backward noteId) model.notes
+                    in
+                        ( { model | notes = movedNotes }, Cmd.none )
 
         NoteContent str ->
-            ( Model notes id str, Cmd.none )
+            ( { model | textField = str }, Cmd.none )
+
+        SetTableState stage state ->
+            case stage of
+                Daily ->
+                    ( { model | dailyTableState = state }, Cmd.none )
+
+                Completed ->
+                    ( { model | completedTableState = state }, Cmd.none )
+
+                Queue ->
+                    ( { model | queueTableState = state }, Cmd.none )
+
+                Backlog ->
+                    ( { model | backlogTableState = state }, Cmd.none )
 
 
 stageIsEqual : Stage -> Note -> Bool
@@ -126,20 +171,11 @@ filterStage stage notes =
     List.filter (stageIsEqual stage) notes
 
 
-noteView : Note -> Html Msg
-noteView note =
-    li []
-        [ text note.content
-        , button [ onClick (Move Forward note.id) ] [ text "✓" ]
-        , button [ onClick (Move Backward note.id) ] [ text "✗" ]
-        ]
-
-
-stageView : String -> Stage -> List Note -> Html Msg
-stageView header stage notes =
+stageView : String -> Stage -> List Note -> Table.Config Note Msg -> Table.State -> Html Msg
+stageView header stage notes tableConfig tableState =
     div [ class "stageViewDiv" ]
         [ text header
-        , ul [] (filterStage stage notes |> List.map noteView)
+        , Table.view tableConfig tableState (filterStage stage notes)
         ]
 
 
@@ -151,10 +187,26 @@ view model =
             , button [ onClick Add ] [ text "Add to daily" ]
             ]
         , div [ class "stageViewContainer" ]
-            [ stageView "Backlog" Backlog model.notes
-            , stageView "Queue" Queue model.notes
-            , stageView "Daily" Daily model.notes
-            , stageView "Completed" Completed model.notes
+            [ stageView "Backlog" Backlog model.notes (configGen Backlog) model.backlogTableState
+            , stageView "Queue" Queue model.notes (configGen Queue) model.queueTableState
+            , stageView "Daily" Daily model.notes (configGen Daily) model.dailyTableState
+            , stageView "Completed" Completed model.notes (configGen Completed) model.completedTableState
             , Html.node "link" [ Html.Attributes.rel "stylesheet", Html.Attributes.href "style.css" ] []
             ]
         ]
+
+
+toId : Note -> String
+toId note =
+    toString note.id
+
+
+configGen : Stage -> Table.Config Note Msg
+configGen stage =
+    Table.config
+        { toId = toId
+        , toMsg = (SetTableState stage)
+        , columns =
+            [ Table.stringColumn "Title" .content
+            ]
+        }
