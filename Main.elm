@@ -179,6 +179,23 @@ stageView header stage notes tableConfig tableState =
         ]
 
 
+titleColumn : Table.Column Note Msg
+titleColumn =
+  Table.veryCustomColumn
+    { name = "Title"
+    , viewData = noteView
+    , sorter = Table.increasingOrDecreasingBy .content
+    }
+
+noteView : Note -> Table.HtmlDetails Msg
+noteView note =
+    Table.HtmlDetails []
+        [ text note.content
+        , button [ onClick (Move Forward note.id) ] [ text "✓" ]
+        , button [ onClick (Move Backward note.id) ] [ text "✗" ]
+        ]
+
+
 view : Model -> Html Msg
 view model =
     div [ class "app" ]
@@ -207,6 +224,6 @@ configGen stage =
         { toId = toId
         , toMsg = (SetTableState stage)
         , columns =
-            [ Table.stringColumn "Title" .content
+            [ titleColumn
             ]
         }
