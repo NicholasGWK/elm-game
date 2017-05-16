@@ -137,7 +137,7 @@ noteView note =
 
 stageView : String -> Stage -> List Note -> Html Msg
 stageView header stage notes =
-    div []
+    div [ class "stageViewDiv" ]
         [ text header
         , ul [] (filterStage stage notes |> List.map noteView)
         ]
@@ -145,11 +145,16 @@ stageView header stage notes =
 
 view : Model -> Html Msg
 view model =
-    div [] [ input [ onInput NoteContent ] []
-           , button [ onClick Add ] [ text "Add to daily" ]
-           , stageView "Backlog" Backlog model.notes
-           , stageView "Queue" Queue model.notes
-           , stageView "Daily" Daily model.notes
-           , stageView "Completed" Completed model.notes
-
-           ]
+    div [ class "app" ]
+        [ div [ class "newNoteDiv" ]
+            [ input [ onInput NoteContent ] []
+            , button [ onClick Add ] [ text "Add to daily" ]
+            ]
+        , div [ class "stageViewContainer" ]
+            [ stageView "Backlog" Backlog model.notes
+            , stageView "Queue" Queue model.notes
+            , stageView "Daily" Daily model.notes
+            , stageView "Completed" Completed model.notes
+            , Html.node "link" [ Html.Attributes.rel "stylesheet", Html.Attributes.href "style.css" ] []
+            ]
+        ]
