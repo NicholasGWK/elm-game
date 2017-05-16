@@ -1,6 +1,6 @@
 module Main exposing (..)
 
-import Html exposing (Html, div, text, button, ul, li)
+import Html exposing (Html, div, text, button, ul, li, input)
 import Html.Events exposing (..)
 import Html.Attributes exposing (..)
 
@@ -36,17 +36,19 @@ type alias Note =
 type alias Model =
     { notes : List Note
     , id : Int
+    , textField : String
     }
 
 
 type Msg
-    = Add Note
+    = Add
     | Move Movement Int
+    | NoteContent String
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model [] 0, Cmd.none )
+    ( Model [] 0 "", Cmd.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -93,28 +95,61 @@ backward noteId { id, content, stage } =
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg { notes, id } =
+update msg { notes, id, textField } =
     case msg of
-        Add note ->
-            ( Model (note :: notes) (id + 1), Cmd.none )
+        Add ->
+            let
+                note =
+                    Note (id + 1) textField Daily
+            in
+                ( Model (note :: notes) (id + 1) textField, Cmd.none )
 
         Move movement noteId ->
             case movement of
                 Forward ->
-                    ( Model (List.map (forward noteId) notes) id, Cmd.none )
+                    ( Model (List.map (forward noteId) notes) id textField, Cmd.none )
 
                 Backward ->
-                    ( Model (List.map (backward noteId) notes) id, Cmd.none )
+                    ( Model (List.map (backward noteId) notes) id textField, Cmd.none )
+
+        NoteContent str ->
+            ( Model notes id str, Cmd.none )
+
+
+stageIsEqual : Stage -> Note -> Bool
+stageIsEqual stage note =
+    note.stage == stage
+
+
+filterStage : Stage -> List Note -> List Note
+filterStage stage notes =
+    List.filter (stageIsEqual stage) notes
+
+
+noteView : Note -> Html Msg
+noteView note =
+    li []
+        [ text note.content
+        , button [ onClick (Move Forward note.id) ] [ text "✓" ]
+        , button [ onClick (Move Backward note.id) ] [ text "✗" ]
+        ]
 
 
 stageView : String -> Stage -> List Note -> Html Msg
 stageView header stage notes =
     div []
         [ text header
-        , ul [] (List.filter (\note -> note.stage == stage) notes |> (List.map (\note -> li [] [ text note.context ])))
+        , ul [] (filterStage stage notes |> List.map noteView)
         ]
 
 
 view : Model -> Html Msg
 view model =
-    div [] [ stageView "Daily" Daily model.notes ]
+    div [] [ input [ onInput NoteContent ] []
+           , button [ onClick Add ] [ text "Add to daily" ]
+           , stageView "Backlog" Backlog model.notes
+           , stageView "Queue" Queue model.notes
+           , stageView "Daily" Daily model.notes
+           , stageView "Completed" Completed model.notes
+
+           ]
