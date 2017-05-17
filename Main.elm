@@ -4,6 +4,7 @@ import Html exposing (Html, div, text, button, ul, li, input)
 import Html.Events exposing (..)
 import Html.Attributes exposing (..)
 import Table
+import DnD
 
 
 main =
@@ -11,8 +12,19 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
+
+
+dnd =
+    DnD.init DnDMsg Dropped
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ dnd.subscriptions model.draggable
+        ]
 
 
 type Stage
@@ -22,34 +34,36 @@ type Stage
     | Completed
 
 
-type Movement
-    = Forward
-    | Backward
-
-
-type alias Note =
-    { id : Int
-    , content : String
-    , stage : Stage
-    }
+type alias NoteId =
+    Int
 
 
 type alias Model =
     { notes : List Note
-    , id : Int
+    , id : NoteId
     , textField : String
     , dailyTableState : Table.State
     , completedTableState : Table.State
     , queueTableState : Table.State
     , backlogTableState : Table.State
+    , draggable : DnD.Draggable Stage Note
+    }
+
+
+type alias Note =
+    { id : NoteId
+    , content : String
+    , stage : Stage
     }
 
 
 type Msg
     = Add
-    | Move Movement Int
+    | Move Stage NoteId
     | NoteContent String
     | SetTableState Stage Table.State
+    | Dropped Stage Note
+    | DnDMsg (DnD.Msg Stage Note)
 
 
 tableInit =
@@ -65,50 +79,13 @@ initModel =
     , completedTableState = tableInit
     , queueTableState = tableInit
     , backlogTableState = tableInit
+    , draggable = dnd.model
     }
 
 
 init : ( Model, Cmd Msg )
 init =
     ( initModel, Cmd.none )
-
-
-forward : Int -> Note -> Note
-forward noteId { id, stage, content } =
-    if id == noteId then
-        case stage of
-            Backlog ->
-                Note id content Queue
-
-            Queue ->
-                Note id content Daily
-
-            Daily ->
-                Note id content Completed
-
-            Completed ->
-                Note id content Completed
-    else
-        Note id content stage
-
-
-backward : Int -> Note -> Note
-backward noteId { id, content, stage } =
-    if id == noteId then
-        case stage of
-            Backlog ->
-                Note id content Backlog
-
-            Queue ->
-                Note id content Backlog
-
-            Daily ->
-                Note id content Queue
-
-            Completed ->
-                Note id content Daily
-    else
-        Note id content stage
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -127,21 +104,12 @@ update msg model =
             in
                 ( { model | notes = newNotes, id = newId }, Cmd.none )
 
-        Move movement noteId ->
-            case movement of
-                Forward ->
-                    let
-                        movedNotes =
-                            List.map (forward noteId) model.notes
-                    in
-                        ( { model | notes = movedNotes }, Cmd.none )
-
-                Backward ->
-                    let
-                        movedNotes =
-                            List.map (backward noteId) model.notes
-                    in
-                        ( { model | notes = movedNotes }, Cmd.none )
+        Move stage noteId ->
+            let
+                movedNotes =
+                    List.map (updateStageIfIdMatch noteId stage) model.notes
+            in
+                ( { model | notes = movedNotes }, Cmd.none )
 
         NoteContent str ->
             ( { model | textField = str }, Cmd.none )
@@ -160,6 +128,64 @@ update msg model =
                 Backlog ->
                     ( { model | backlogTableState = state }, Cmd.none )
 
+        DnDMsg msg ->
+            ( { model | draggable = DnD.update msg model.draggable }, Cmd.none )
+
+        Dropped stage note ->
+            let
+                movedNotes =
+                    List.map (updateStageIfIdMatch note.id stage) model.notes
+            in
+                ( { model | notes = movedNotes }, Cmd.none )
+
+
+forward : Note -> Msg
+forward note =
+    let
+        nextStage =
+            case note.stage of
+                Backlog ->
+                    Queue
+
+                Queue ->
+                    Daily
+
+                Daily ->
+                    Completed
+
+                Completed ->
+                    Completed
+    in
+        Move nextStage note.id
+
+
+backward : Note -> Msg
+backward note =
+    let
+        nextStage =
+            case note.stage of
+                Backlog ->
+                    Backlog
+
+                Queue ->
+                    Backlog
+
+                Daily ->
+                    Queue
+
+                Completed ->
+                    Daily
+    in
+        Move nextStage note.id
+
+
+updateStageIfIdMatch : NoteId -> Stage -> Note -> Note
+updateStageIfIdMatch id stage note =
+    if id == note.id then
+        { note | stage = stage }
+    else
+        note
+
 
 stageIsEqual : Stage -> Note -> Bool
 stageIsEqual stage note =
@@ -173,26 +199,32 @@ filterStage stage notes =
 
 stageView : String -> Stage -> List Note -> Table.Config Note Msg -> Table.State -> Html Msg
 stageView header stage notes tableConfig tableState =
-    div [ class "stageViewDiv" ]
-        [ text header
-        , Table.view tableConfig tableState (filterStage stage notes)
-        ]
+    dnd.droppable stage
+        [class "stageViewDiv" ]
+            [ text header
+            , Table.view tableConfig tableState (filterStage stage notes)
+            ]
 
 
 titleColumn : Table.Column Note Msg
 titleColumn =
-  Table.veryCustomColumn
-    { name = "Title"
-    , viewData = noteView
-    , sorter = Table.increasingOrDecreasingBy .content
-    }
+    Table.veryCustomColumn
+        { name = "Title"
+        , viewData = noteView
+        , sorter = Table.increasingOrDecreasingBy .content
+        }
+
 
 noteView : Note -> Table.HtmlDetails Msg
 noteView note =
     Table.HtmlDetails []
-        [ text note.content
-        , button [ onClick (Move Forward note.id) ] [ text "✓" ]
-        , button [ onClick (Move Backward note.id) ] [ text "✗" ]
+        [ (dnd.draggable note
+            []
+            [ text note.content
+            , button [ onClick (forward note) ] [ text "✓" ]
+            , button [ onClick (backward note) ] [ text "✗" ]
+            ]
+          )
         ]
 
 
@@ -201,16 +233,22 @@ view model =
     div [ class "app" ]
         [ div [ class "newNoteDiv" ]
             [ input [ onInput NoteContent ] []
-            , button [ onClick Add ] [ text "Add to daily" ]
+            , button [ onClick Add ] [ text "Add to Daily" ]
             ]
         , div [ class "stageViewContainer" ]
             [ stageView "Backlog" Backlog model.notes (configGen Backlog) model.backlogTableState
             , stageView "Queue" Queue model.notes (configGen Queue) model.queueTableState
             , stageView "Daily" Daily model.notes (configGen Daily) model.dailyTableState
             , stageView "Completed" Completed model.notes (configGen Completed) model.completedTableState
+            , DnD.dragged model.draggable dragged
             , Html.node "link" [ Html.Attributes.rel "stylesheet", Html.Attributes.href "style.css" ] []
             ]
         ]
+
+
+dragged : Note -> Html Msg
+dragged note =
+    div [] [ text note.content ]
 
 
 toId : Note -> String
